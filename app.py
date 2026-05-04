@@ -6,19 +6,20 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # =========================
-# 1. CONFIGURATION
+# CONFIG
 # =========================
+st.set_page_config(page_title="AskYourDocs AI", page_icon="🤖", layout="wide")
+
+# API KEY
+if "GOOGLE_API_KEY" not in st.secrets:
+    st.error("API Key not found. Add it in Streamlit secrets.")
+    st.stop()
+
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel("models/gemini-flash-latest")
 
-st.set_page_config(
-    page_title="AskYourDocs AI",
-    page_icon="🤖",
-    layout="wide"
-)
-
 # =========================
-# 2. FUNCTIONS
+# FUNCTIONS
 # =========================
 def get_pdf_text(pdf_docs):
     text = ""
@@ -49,20 +50,95 @@ def load_db():
     )
 
 # =========================
-# 3. UI (ONE PAGE)
+# MODERN UI STYLE
 # =========================
-st.title("🤖 AskYourDocs AI")
-st.markdown("اسأل عن أي ملف PDF وسيقوم الذكاء الاصطناعي بالإجابة بناءً عليه")
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
 
-# Upload Section
+html, body, [class*="css"] {
+    font-family: 'Cairo', sans-serif;
+}
+
+.stApp {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: white;
+}
+
+/* Title */
+.main-title {
+    text-align: center;
+    font-size: 3rem;
+    font-weight: bold;
+    background: linear-gradient(90deg, #10b981, #34d399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Subtitle */
+.subtitle {
+    text-align: center;
+    color: #94a3b8;
+    margin-bottom: 30px;
+}
+
+/* Upload box */
+.upload-box {
+    border: 2px dashed #334155;
+    padding: 30px;
+    border-radius: 15px;
+    text-align: center;
+    background: rgba(30, 41, 59, 0.5);
+}
+
+/* Chat bubble */
+.user-msg {
+    background: #10b981;
+    padding: 12px;
+    border-radius: 12px;
+    margin: 10px 0;
+    color: white;
+}
+
+.bot-msg {
+    background: #1e293b;
+    padding: 12px;
+    border-radius: 12px;
+    margin: 10px 0;
+    border: 1px solid #334155;
+}
+
+/* Button */
+.stButton > button {
+    background: linear-gradient(90deg, #10b981, #059669);
+    color: white;
+    border-radius: 10px;
+    padding: 10px;
+    border: none;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# HEADER
+# =========================
+st.markdown('<div class="main-title">AskYourDocs AI</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">ارفع ملفاتك واسأل عنها مباشرة</div>', unsafe_allow_html=True)
+
+# =========================
+# UPLOAD SECTION
+# =========================
+st.markdown('<div class="upload-box">', unsafe_allow_html=True)
+
 pdf_docs = st.file_uploader(
-    "📂 Upload your PDF files",
+    "📂 اسحب ملفات PDF هنا أو اضغط للرفع",
     accept_multiple_files=True
 )
 
-if st.button("📊 Process Files"):
+if st.button("🚀 معالجة الملفات"):
     if pdf_docs:
-        with st.spinner("Processing..."):
+        with st.spinner("جارٍ تحليل الملفات..."):
             raw_text = get_pdf_text(pdf_docs)
 
             splitter = RecursiveCharacterTextSplitter(
@@ -73,60 +149,54 @@ if st.button("📊 Process Files"):
 
             create_vector_store(chunks)
 
-        st.success("جاهز للإجابة ✅")
+        st.success("تم تجهيز الملفات بنجاح ✅")
     else:
         st.warning("ارفع ملفات الأول")
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
 
 # =========================
-# 4. CHAT
+# CHAT
 # =========================
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# عرض الرسائل
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    if msg["role"] == "user":
+        st.markdown(f'<div class="user-msg">👤 {msg["content"]}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="bot-msg">🤖 {msg["content"]}</div>', unsafe_allow_html=True)
 
-if prompt := st.chat_input("اسأل عن ملفاتك..."):
-    st.session_state.messages.append({
-        "role": "user",
-        "content": prompt
-    })
+# إدخال المستخدم
+if prompt := st.chat_input("اكتب سؤالك هنا..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    with st.spinner("Thinking..."):
+        try:
+            db = load_db()
+            docs = db.similarity_search(prompt)
+            context = "\n\n".join([d.page_content for d in docs])
+        except:
+            context = "لا توجد ملفات مرفوعة"
 
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            try:
-                db = load_db()
-                docs = db.similarity_search(prompt)
+        full_prompt = f"""
+        أنت مساعد ذكي يجيب فقط من الملفات.
 
-                context = "\n\n".join(
-                    [doc.page_content for doc in docs]
-                )
-            except:
-                context = "لا توجد ملفات مرفوعة"
+        السياق:
+        {context}
 
-            sys_msg = "أنت مساعد ذكي يجيب فقط من الملفات المرفوعة. أجب باحتراف وباختصار."
+        السؤال:
+        {prompt}
+        """
 
-            full_query = f"""
-            {sys_msg}
+        response = model.generate_content(full_prompt)
 
-            السياق:
-            {context}
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": response.text
+        })
 
-            السؤال:
-            {prompt}
-            """
-
-            response = model.generate_content(full_query)
-
-            st.markdown(response.text)
-
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": response.text
-            })
+    st.rerun()
